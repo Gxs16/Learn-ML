@@ -69,7 +69,7 @@ class BasicBlock(nn.Layer):
         y = self.relu(y)
         return y
 
-class BottleneckBlock(nn.Layer):
+class BottleneckBlock(nn.Layer): # 
     expansion = 4
     def __init__(self, in_channels, out_channels, stride=1, shortcut=True,
                  dilation=1, padding=None):
@@ -112,10 +112,10 @@ class BottleneckBlock(nn.Layer):
         return y
 
 class ResNet(nn.Layer):
-    def __init__(self, layers=50, num_classes=1000):
+    def __init__(self, layers=50, num_classes=1000, multi_grid=[1, 2, 4], duplicate_blocks=False):
         super().__init__()
         self.layers = layers
-
+        mgr = [1, 2, 4]
         if layers == 18:
             depth = [2, 2, 2, 2]
         elif layers == 34:
@@ -130,11 +130,11 @@ class ResNet(nn.Layer):
             raise Exception('supported layers: [18, 34, 50, 101, 152]')
 
         if layers < 50:
-            in_channels = [64, 64, 128, 256]
+            in_channels = [64, 64, 128, 256, 512]
             block = BasicBlock
             l1_shortcut = True
         else:
-            in_channels = [64, 256, 512, 1024]
+            in_channels = [64, 256, 512, 1024, 2048]
             block = BottleneckBlock
             l1_shortcut = False
 
@@ -185,30 +185,66 @@ class ResNet(nn.Layer):
                                 shortcut=l1_shortcut,
                                 dilation=4)
         )
+
+        if duplicate_blocks:
+            self.layer5 = Sequential(
+                *self._make_layer(block=block,
+                                  in_channels=in_channels[4],
+                                  out_channels=out_channels[3],
+                                  depth=depth[3],
+                                  stride=1,
+                                  dilation=[x*mgr[0] for x in multi_grid])
+            )
+            self.layer6 = Sequential(
+                *self._make_layer(block=block,
+                                  in_channels=in_channels[4],
+                                  out_channels=out_channels[3],
+                                  depth=depth[3],
+                                  stride=1,
+                                  dilation=[x*mgr[1] for x in multi_grid])
+            )
+            self.layer7 = Sequential(
+                *self._make_layer(block=block,
+                                  in_channels=in_channels[4],
+                                  out_channels=out_channels[3],
+                                  depth=depth[3],
+                                  stride=1,
+                                  dilation=[x*mgr[2] for x in multi_grid])
+            )
+
         self.last_pool = AdaptiveAvgPool2D(output_size=(1, 1))
         self.fc = Linear(in_features=out_channels[-1]*block.expansion,
                             out_features=num_classes)
 
     def _make_layer(self, block, in_channels, out_channels, depth, stride, dilation=1, shortcut=False):
         layers = []
-        if dilation > 1:
-            padding = dilation
-        else:
-            padding = None
+
+        if isinstance(dilation, int):
+            dilation = [dilation] * depth
+        elif isinstance(dilation, (list, tuple)):
+            assert len(dilation) == 3, "Wrong dilation rate for multi-grid | len should be 3"
+            assert depth ==3, "multi-grid can only applied to blocks with depth 3"
+
+        padding = []
+        for di in dilation:
+            if di > 1:
+                padding.append(di)
+            else:
+                padding.append(None)
 
         layers.append(block(in_channels,
                             out_channels,
                             stride=stride,
                             shortcut=shortcut,
-                            dilation=dilation,
-                            padding=padding))
+                            dilation=dilation[0],
+                            padding=padding[0]))
 
         for i in range(1, depth):
             layers.append(block(out_channels*block.expansion,
                                 out_channels,
                                 stride=1,
-                                dilation=dilation,
-                                padding=padding))
+                                dilation=dilation[i],
+                                padding=padding[i]))
         return layers
 
     def forward(self, inputs):
@@ -232,13 +268,12 @@ class ResNet(nn.Layer):
 
         return x
 
-def ResNet50():
-        return ResNet()
+def ResNet50(duplicate_blocks=True):
+        return ResNet(duplicate_blocks=duplicate_blocks)
 
     
 
 if __name__ == '__main__':
-    
     x_data = np.random.rand(2, 3, 512, 512).astype(np.float32)
     x = paddle.to_tensor(x_data)
     model = ResNet50()
