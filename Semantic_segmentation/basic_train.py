@@ -3,8 +3,9 @@ import paddle
 from paddle.io import DataLoader
 import paddle.optimizer as optim
 from paddle.vision.transforms import Compose
-from basic_transform import random_scale, random_horizontal_flip, custom_resize, custom_normalize, to_tensor
+from basic_transform import random_scale, random_horizontal_flip, custom_resize, custom_normalize, to_tensor, grayscale
 import argparse
+from PSPNet import PSPNet
 from FCN8s import FCN8s
 from basic_segloss import basic_seg_loss
 from basic_dataset import basic_dataset
@@ -13,8 +14,8 @@ from utils import AverageMeter
 parser = argparse.ArgumentParser()
 parser.add_argument('--net', type=str, default='basic')
 parser.add_argument('--lr', type=float, default=0.001)
-parser.add_argument('--num_epochs', type=int, default=120)
-parser.add_argument('--batch_size', type=int, default=8)
+parser.add_argument('--num_epochs', type=int, default=60)
+parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--image_folder', type=str, default='./dummy_data')
 parser.add_argument('--image_list_file', type=str, default='./dummy_data/list.txt')
 parser.add_argument('--checkpoint_folder', type=str, default='./output')
@@ -44,6 +45,7 @@ def train(dataloader, model, criterion, optimizer, epoch, total_batch):
 
     return train_loss_meter.avg
 
+@paddle.no_grad()
 def test(dataloader, model, criterion):
     train_loss_meter = AverageMeter()
     for batch_id, data in enumerate(dataloader):
@@ -55,7 +57,7 @@ def test(dataloader, model, criterion):
         train_loss_meter.update(loss.numpy()[0], n)
 
     return train_loss_meter.avg
-    
+
 
 if __name__ == '__main__':
     device = paddle.device.get_device()
@@ -63,16 +65,22 @@ if __name__ == '__main__':
     basic_transforms = Compose(transforms=[
                                             random_horizontal_flip(),
                                             random_scale(),
-                                            custom_resize(size=(256, 256), interpolation='nearest'),
+                                            custom_resize(size=(512, 512), interpolation='nearest'),
                                             custom_normalize(data_format='HWC'),
-                                            # grayscale(),
                                             to_tensor()])
-    model = FCN8s(9)
-    train_set = basic_dataset(image_folder='/home/aistudio/facade/images', label_folder='/home/aistudio/facade/labels_signle', image_file_list='/home/aistudio/facade/image_list.txt', transform=basic_transforms, usage='train')
-    train_dataloader = DataLoader(dataset=train_set, shuffle=True, num_workers=0, batch_size=args.batch_size, use_shared_memory=False)
+    test_transforms = Compose(transforms=[
+                                            custom_resize(size=(512, 512), interpolation='nearest'),
+                                            custom_normalize(data_format='HWC'),
+                                            to_tensor()])
+    model = PSPNet(9)
+    train_set = basic_dataset(image_folder='/home/aistudio/facade/images', label_folder='/home/aistudio/facade/labels_signle',
+                              image_file_list='/home/aistudio/facade/image_list.txt', transform=basic_transforms, usage='train')
+    train_dataloader = DataLoader(dataset=train_set, shuffle=True, num_workers=0,
+                                    batch_size=args.batch_size, use_shared_memory=False)
     
-    test_set = basic_dataset(image_folder='/home/aistudio/facade/images', label_folder='/home/aistudio/facade/labels_signle', image_file_list='/home/aistudio/facade/image_list.txt', transform=basic_transforms, usage='test')
-    test_dataloader = DataLoader(dataset=test_set, shuffle=False, num_workers=0, batch_size=1, use_shared_memory=False)
+    test_set = basic_dataset(image_folder='/home/aistudio/facade/images', label_folder='/home/aistudio/facade/labels_signle',
+                            image_file_list='/home/aistudio/facade/image_list.txt', transform=test_transforms, usage='test')
+    test_dataloader = DataLoader(dataset=test_set, shuffle=False, num_workers=0, batch_size=8, use_shared_memory=False)
 
     total_batch = len(train_dataloader)
     criterion = basic_seg_loss

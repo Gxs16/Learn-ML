@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import paddle
 from paddle.vision.transforms import BaseTransform
@@ -49,16 +50,32 @@ class random_scale(BaseTransform):
 class random_horizontal_flip(RandomHorizontalFlip):
     def __init__(self, prob=0.5, keys=('image', 'label')):
         super().__init__(prob=prob, keys=keys)
+        self.random = random.random()
 
+    def _apply_image(self, img):
+        if self.random < self.prob:
+            return F.vflip(img)
+        return img
+    
     def _apply_label(self, label):
-        return super()._apply_image(label)
+        if self.random < self.prob:
+            return F.vflip(label)
+        return label
 
 class random_vertical_flip(RandomVerticalFlip):
-    def __init__(self, prob=0.5, keys=None):
+    def __init__(self, prob=0.5, keys=('image', 'label')):
         super().__init__(prob=prob, keys=keys)
+        self.random = random.random()
 
+    def _apply_image(self, img):
+        if self.random < self.prob:
+            return F.hflip(img)
+        return img
+    
     def _apply_label(self, label):
-        return super()._apply_image(label)
+        if self.random < self.prob:
+            return F.hflip(label)
+        return label
 
 class custom_resize(Resize):
     def __init__(self, size, interpolation='bilinear', keys=('image', 'label')):
@@ -73,7 +90,7 @@ class custom_normalize(Normalize):
                  data_format='CHW',
                  to_rgb=False,
                  keys=('image', 'label')):
-        super().__init__(mean=mean, std=std, data_format=data_format, to_rgb=False, keys=keys)
+        super().__init__(mean=mean, std=std, data_format=data_format, to_rgb=to_rgb, keys=keys)
 
     def _apply_label(self, label):
         return label
